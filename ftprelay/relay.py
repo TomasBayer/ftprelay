@@ -1,5 +1,7 @@
 import logging
-import os
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from pyftpdlib.authorizers import AuthenticationFailed
 from pyftpdlib.handlers import FTPHandler
@@ -7,63 +9,91 @@ from pyftpdlib.servers import FTPServer
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_BASE_PATH = Path('/dev/shm/ftprelay')
+
 
 class AuthenticationFailedError(Exception):
     pass
 
 
-class FTPRelay(FTPServer):
+class FileProcessor(ABC):
 
-    def __init__(self, address, file_processor_creator):
-        self.file_processor_creator = file_processor_creator
+    @abstractmethod
+    def process_file(self, file: Path) -> None:
+        raise NotImplementedError()
 
-        super().__init__(address, self.build_handler())
 
-    def build_handler(self):
-        class CustomAuthorizer(object):
-            file_processor_creator = self.file_processor_creator
+class Authenticator(ABC):
 
-            def __init__(self):
-                self.file_processors = {}
+    @abstractmethod
+    def authenticate(self, username: str, password: str) -> FileProcessor:
+        raise NotImplementedError()
 
-            def get_home_dir(self, username):
-                home_dir = '/dev/shm/{}/{}/'.format(__name__, username)
-                os.makedirs(home_dir, exist_ok=True)
-                return home_dir
 
-            def has_perm(self, username, perm, path=None):
-                return perm == 'w'
+@dataclass
+class CustomAuthorizer:
+    authenticator: Authenticator
+    tmp_dir_base_path: Path
 
-            def get_msg_login(self, username):
-                return "Hello."
+    file_processors: dict[str, FileProcessor] = field(init=False, default_factory=dict)
 
-            def get_msg_quit(self, username):
-                del self.file_processors[username]
-                return "Goodbye."
+    def get_home_dir(self, username: str) -> str:
+        path = self.tmp_dir_base_path / username
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
 
-            def impersonate_user(self, username, password):
-                pass
+    def has_perm(self, username: str, perm: str, path=None) -> bool:
+        return perm == 'w'
 
-            def terminate_impersonation(self, username):
-                pass
+    def get_msg_login(self, username: str) -> str:
+        return 'Hello.'
 
-            def validate_authentication(self, username, password, handler):
-                try:
-                    self.file_processors[username] = self.file_processor_creator(username, password)
-                except AuthenticationFailedError as err:
-                    raise AuthenticationFailed() from err
+    def get_msg_quit(self, username: str) -> str:
+        del self.file_processors[username]
+        return 'Goodbye.'
 
+    def impersonate_user(self, username: str, password: str):
+        pass
+
+    def terminate_impersonation(self, username: str):
+        pass
+
+    def validate_authentication(self, username: str, password: str, handler: FTPHandler):
+        try:
+            self.file_processors[username] = self.authenticator.authenticate(username, password)
+        except AuthenticationFailedError as err:
+            raise AuthenticationFailed() from err
+
+
+@dataclass
+class FTPRelay:
+    authenticator: Authenticator
+    tmp_dir_base_path: Path = DEFAULT_BASE_PATH
+    host: str = '127.0.0.1'
+    port: int = 21
+
+    ftp_server: FTPServer = field(init=False)
+
+    def __post_init__(self):
         class CustomHandler(FTPHandler):
-            authorizer = CustomAuthorizer()
+            authorizer = CustomAuthorizer(self.authenticator, self.tmp_dir_base_path)
 
             # Process received file routine
-            def on_file_received(self, filename):
-                logger.info('Received file {}'.format(os.path.basename(filename)))
+            def on_file_received(self, filename: str):
+                path = Path(filename)
+
+                logger.info(f"Received file {path.name}")
 
                 # Upload file
-                self.authorizer.file_processors[self.username](filename)
+                self.authorizer.file_processors[self.username].process_file(path)
 
                 # Remove file
-                os.remove(filename)
+                path.unlink()
 
-        return CustomHandler
+        self.ftp_server = FTPServer(address_or_socket=(self.host, self.port), handler=CustomHandler)
+
+    def start(self):
+        self.ftp_server.serve_forever()
+
+    def stop(self):
+        self.ftp_server.close_all()

@@ -1,3 +1,3 @@
-from ftprelay.relay import AuthenticationFailedError, FTPRelay
+from ftprelay.relay import AuthenticationFailedError, Authenticator, FileProcessor, FTPRelay
 
-__all__ = ['FTPRelay', 'AuthenticationFailedError']
+__all__ = ['FTPRelay', 'AuthenticationFailedError', 'Authenticator', 'FileProcessor']
