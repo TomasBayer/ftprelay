@@ -2,6 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
+from tempfile import mkdtemp
 
 from pyftpdlib.authorizers import AuthenticationFailed
 from pyftpdlib.handlers import FTPHandler
@@ -33,14 +34,12 @@ class Authenticator(ABC):
 @dataclass
 class CustomAuthorizer:
     authenticator: Authenticator
-    tmp_dir_base_path: Path
+    tmp_dir_base_path: Path | None
 
     file_processors: dict[str, FileProcessor] = field(init=False, default_factory=dict)
 
     def get_home_dir(self, username: str) -> str:
-        path = self.tmp_dir_base_path / username
-        path.mkdir(parents=True, exist_ok=True)
-        return str(path)
+        return mkdtemp(dir=self.tmp_dir_base_path)
 
     def has_perm(self, username: str, perm: str, path=None) -> bool:
         return perm == 'w'
@@ -68,7 +67,7 @@ class CustomAuthorizer:
 @dataclass
 class FTPRelay:
     authenticator: Authenticator
-    tmp_dir_base_path: Path = DEFAULT_BASE_PATH
+    tmp_dir_base_path: Path | None = DEFAULT_BASE_PATH
     host: str = '127.0.0.1'
     port: int = 21
 
@@ -89,6 +88,9 @@ class FTPRelay:
 
                 # Remove file
                 path.unlink()
+
+                # Remove folder
+                path.parent.rmdir()
 
         self.ftp_server = FTPServer(address_or_socket=(self.host, self.port), handler=CustomHandler)
 
