@@ -10,8 +10,6 @@ from pyftpdlib.servers import FTPServer
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BASE_PATH = Path('/dev/shm/ftprelay')
-
 
 class AuthenticationFailedError(Exception):
     pass
@@ -67,7 +65,7 @@ class CustomAuthorizer:
 @dataclass
 class FTPRelay:
     authenticator: Authenticator
-    tmp_dir_base_path: Path | None = DEFAULT_BASE_PATH
+    tmp_dir_base_path: Path | None = None
     host: str = '127.0.0.1'
     port: int = 21
 
