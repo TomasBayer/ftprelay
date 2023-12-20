@@ -1,5 +1,8 @@
 # ftprelay
 
+[![PyPI - Version](https://img.shields.io/pypi/v/ftprelay)](https://pypi.org/project/ftprelay/)
+
+
 `ftprelay` is a lightweight Python module that provides a simple framework for setting up a minimal, non-persisting FTP server whose single purpose is to execute custom code on uploaded files before discarding them.
 
 It was developed with the goal of retrofitting older devices or software that exclusively support FTP upload for file transfer, enabling a broader range of applications.
